@@ -1,0 +1,462 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  FINANCE
+  CFO
+  DEPARTMENT_HEAD
+  TEAM_HEAD
+  REQUESTER
+}
+
+enum POStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CLOSED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalAction {
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+enum VendorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  AED
+  SAR
+  INR
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  PAYMENT
+}
+
+// ─── Auth.js Models ──────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── User ────────────────────────────────────────────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  emailVerified  DateTime?
+  hashedPassword String?
+  image          String?
+  role           UserRole  @default(REQUESTER)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  managerId String?
+  manager   User?   @relation("ManagerReports", fields: [managerId], references: [id])
+  reports   User[]  @relation("ManagerReports")
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  accounts       Account[]
+  sessions       Session[]
+  safeLimits     SafeLimit[]
+  purchaseOrders PurchaseOrder[]
+  approvalSteps  ApprovalStep[]
+  payments       Payment[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+
+  @@index([departmentId])
+  @@index([managerId])
+  @@index([role])
+}
+
+// ─── Organization Structure ──────────────────────────────────────────────────
+
+model Department {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  budgetCategories BudgetCategory[]
+  safeLimits       SafeLimit[]
+  purchaseOrders   PurchaseOrder[]
+}
+
+model FiscalYear {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+  isLocked  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  budgetCategories BudgetCategory[]
+  safeLimits       SafeLimit[]
+  exchangeRates    ExchangeRate[]
+  purchaseOrders   PurchaseOrder[]
+}
+
+// ─── Budget Management ───────────────────────────────────────────────────────
+
+model BudgetCategory {
+  id              String   @id @default(cuid())
+  name            String
+  glCode          String?
+  totalBudget     Decimal  @db.Decimal(18, 4)
+  allocatedAmount Decimal  @default(0) @db.Decimal(18, 4)
+  currency        Currency @default(USD)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  fiscalYearId String
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id])
+
+  lineItems  BudgetLineItem[]
+  safeLimits SafeLimit[]
+
+  @@unique([departmentId, name, fiscalYearId])
+  @@index([departmentId])
+  @@index([fiscalYearId])
+}
+
+model BudgetLineItem {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  allocatedAmount Decimal  @db.Decimal(18, 4)
+  spentAmount     Decimal  @default(0) @db.Decimal(18, 4)
+  currency        Currency @default(USD)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  budgetCategoryId String
+  budgetCategory   BudgetCategory @relation(fields: [budgetCategoryId], references: [id])
+
+  poLineItems POLineItem[]
+
+  @@index([budgetCategoryId])
+}
+
+model SafeLimit {
+  id          String   @id @default(cuid())
+  limitAmount Decimal  @db.Decimal(18, 4)
+  usedAmount  Decimal  @default(0) @db.Decimal(18, 4)
+  currency    Currency @default(USD)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  budgetCategoryId String
+  budgetCategory   BudgetCategory @relation(fields: [budgetCategoryId], references: [id])
+
+  fiscalYearId String
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id])
+
+  @@unique([ownerId, departmentId, budgetCategoryId, fiscalYearId])
+  @@index([ownerId])
+  @@index([departmentId])
+  @@index([fiscalYearId])
+}
+
+// ─── Exchange Rates ──────────────────────────────────────────────────────────
+
+model ExchangeRate {
+  id           String   @id @default(cuid())
+  fromCurrency Currency
+  toCurrency   Currency
+  rate         Decimal  @db.Decimal(18, 8)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  fiscalYearId String
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id])
+
+  @@unique([fromCurrency, toCurrency, fiscalYearId])
+  @@index([fiscalYearId])
+}
+
+// ─── Vendor Management ───────────────────────────────────────────────────────
+
+model Vendor {
+  id            String       @id @default(cuid())
+  name          String
+  email         String       @unique
+  phone         String?
+  address       String?
+  taxId         String?
+  bankName      String?
+  bankAccountNo String?
+  bankRoutingNo String?
+  bankSwiftCode String?
+  currency      Currency     @default(USD)
+  status        VendorStatus @default(PENDING)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+}
+
+// ─── Purchase Orders ─────────────────────────────────────────────────────────
+
+model PurchaseOrder {
+  id            String    @id @default(cuid())
+  poNumber      String    @unique
+  description   String?
+  totalAmount   Decimal   @db.Decimal(18, 4)
+  paidAmount    Decimal   @default(0) @db.Decimal(18, 4)
+  currency      Currency  @default(USD)
+  status        POStatus  @default(DRAFT)
+  submittedAt   DateTime?
+  approvedAt    DateTime?
+  issuedAt      DateTime?
+  closedAt      DateTime?
+  rejectionNote String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  requesterId String
+  requester   User   @relation(fields: [requesterId], references: [id])
+
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  fiscalYearId String
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id])
+
+  lineItems     POLineItem[]
+  approvalSteps ApprovalStep[]
+  payments      Payment[]
+  attachments   Attachment[]
+
+  @@index([requesterId])
+  @@index([vendorId])
+  @@index([departmentId])
+  @@index([fiscalYearId])
+  @@index([status])
+}
+
+model POLineItem {
+  id          String   @id @default(cuid())
+  description String
+  quantity    Decimal  @db.Decimal(18, 4)
+  unitPrice   Decimal  @db.Decimal(18, 4)
+  totalPrice  Decimal  @db.Decimal(18, 4)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  budgetLineItemId String
+  budgetLineItem   BudgetLineItem @relation(fields: [budgetLineItemId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([budgetLineItemId])
+}
+
+// ─── Approval Workflow ───────────────────────────────────────────────────────
+
+model ApprovalThreshold {
+  id        String   @id @default(cuid())
+  name      String
+  minAmount Decimal  @db.Decimal(18, 4)
+  maxAmount Decimal  @db.Decimal(18, 4)
+  currency  Currency @default(USD)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles ApprovalThresholdRole[]
+}
+
+model ApprovalThresholdRole {
+  id        String   @id @default(cuid())
+  role      UserRole
+  stepOrder Int
+
+  thresholdId String
+  threshold   ApprovalThreshold @relation(fields: [thresholdId], references: [id], onDelete: Cascade)
+
+  @@unique([thresholdId, stepOrder])
+  @@index([thresholdId])
+}
+
+model ApprovalStep {
+  id        String          @id @default(cuid())
+  stepOrder Int
+  action    ApprovalAction?
+  comment   String?
+  actedAt   DateTime?
+  createdAt DateTime        @default(now())
+
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  approverId String
+  approver   User   @relation(fields: [approverId], references: [id])
+
+  @@unique([purchaseOrderId, stepOrder])
+  @@index([purchaseOrderId])
+  @@index([approverId])
+}
+
+// ─── Payments ────────────────────────────────────────────────────────────────
+
+model Payment {
+  id        String   @id @default(cuid())
+  amount    Decimal  @db.Decimal(18, 4)
+  currency  Currency @default(USD)
+  reference String?
+  notes     String?
+  paidAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  recordedById String
+  recordedBy   User   @relation(fields: [recordedById], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([recordedById])
+}
+
+// ─── Attachments ─────────────────────────────────────────────────────────────
+
+model Attachment {
+  id        String   @id @default(cuid())
+  fileName  String
+  fileUrl   String
+  fileSize  Int
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+}
+
+// ─── Audit Log ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  action     AuditAction
+  entityType String
+  entityId   String
+  oldData    Json?
+  newData    Json?
+  createdAt  DateTime    @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
