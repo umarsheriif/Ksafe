@@ -10,7 +10,7 @@ async function main() {
   const adminPassword = await bcrypt.hash("admin123", 12);
   const admin = await prisma.user.upsert({
     where: { email: "admin@ksafe.com" },
-    update: {},
+    update: { hashedPassword: adminPassword },
     create: {
       name: "System Admin",
       email: "admin@ksafe.com",
@@ -23,7 +23,7 @@ async function main() {
   const financePassword = await bcrypt.hash("finance123", 12);
   const finance = await prisma.user.upsert({
     where: { email: "finance@ksafe.com" },
-    update: {},
+    update: { hashedPassword: financePassword },
     create: {
       name: "Finance Manager",
       email: "finance@ksafe.com",
@@ -36,7 +36,7 @@ async function main() {
   const cfoPassword = await bcrypt.hash("cfo123", 12);
   const cfo = await prisma.user.upsert({
     where: { email: "cfo@ksafe.com" },
-    update: {},
+    update: { hashedPassword: cfoPassword },
     create: {
       name: "Chief Financial Officer",
       email: "cfo@ksafe.com",
@@ -68,7 +68,7 @@ async function main() {
   const engHeadPassword = await bcrypt.hash("enghead123", 12);
   const engHead = await prisma.user.upsert({
     where: { email: "eng.head@ksafe.com" },
-    update: {},
+    update: { hashedPassword: engHeadPassword },
     create: {
       name: "Engineering Head",
       email: "eng.head@ksafe.com",
@@ -81,7 +81,7 @@ async function main() {
   const mktHeadPassword = await bcrypt.hash("mkthead123", 12);
   await prisma.user.upsert({
     where: { email: "mkt.head@ksafe.com" },
-    update: {},
+    update: { hashedPassword: mktHeadPassword },
     create: {
       name: "Marketing Head",
       email: "mkt.head@ksafe.com",
@@ -95,7 +95,7 @@ async function main() {
   const requesterPassword = await bcrypt.hash("requester123", 12);
   await prisma.user.upsert({
     where: { email: "requester@ksafe.com" },
-    update: {},
+    update: { hashedPassword: requesterPassword },
     create: {
       name: "John Requester",
       email: "requester@ksafe.com",
